@@ -153,7 +153,7 @@ class Parser:
             self.advance()
             return node
         else:
-            self.report_error(f"Missing {expected_token}")
+            self.report_error(f"missing {expected_token}")
             return None
 
     def report_error(self, message):
@@ -260,30 +260,28 @@ class Parser:
         'Arg-list-prime': [')']
     }
 
-    def check_error(self, non_terminal):
+    def check_error(self, non_terminal, follow_override=None):
         first_set = self.FIRST[non_terminal]
+        follow_set = follow_override if follow_override is not None else self.FOLLOW[non_terminal]
+        
+        # 1. Check FIRST (Success)
         if self.current_token in first_set:
             return False
         if 'EPSILON' in first_set:
-            follow_set = self.FOLLOW[non_terminal]
             if self.current_token in follow_set:
                 return False
         
-        self.report_error(f"illegal {self.current_token}")
-        follow_set = self.FOLLOW[non_terminal]
-        while self.current_token not in first_set and \
-              self.current_token not in follow_set and \
-              self.current_token != '$':
-            self.advance()
-            if self.current_token in first_set:
-                return False 
-            if self.current_token in follow_set:
-                self.report_error(f"missing {non_terminal}")
-                return True 
-
+        # 2. Check FOLLOW (Missing Non-Terminal)
         if self.current_token in follow_set:
             self.report_error(f"missing {non_terminal}")
-            return True 
+            return True # Caller should handle as epsilon
+        
+        # 3. Illegal Token (Panic: Skip ONE token)
+        self.report_error(f"illegal {self.current_token}")
+        self.advance()
+        
+        # After skipping, we return False to let the caller try to match the NEW token 
+        # (or fail again and produce another error, matching the expected output)
         return False
 
     # --- GRAMMAR FUNCTIONS ---
@@ -331,7 +329,7 @@ class Parser:
                 node.add_child(Node("epsilon"))
         else:
             if not self.check_error('Declaration-list'):
-                 # Recovery successful -> check FIRST again
+                 # Check FIRST again after recovery
                  if self.current_token in self.FIRST['Declaration']:
                      node.add_child(self.parse_declaration())
                      node.add_child(self.parse_declaration_list(top_level))
