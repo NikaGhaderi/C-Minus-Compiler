@@ -1,5 +1,21 @@
 # Donya Jafari 401101524 - Nika Ghaderi 401106328
-import os
+import os, sys
+from anytree import Node as AnyNode, RenderTree
+
+# Increase recursion depth
+sys.setrecursionlimit(3000)
+
+# ==========================================
+#        CUSTOM NODE CLASS (The Fix)
+# ==========================================
+class Node(AnyNode):
+    """
+    Wrapper around anytree.Node to support .add_child() 
+    and maintain compatibility with the parser code.
+    """
+    def add_child(self, child):
+        if child:
+            child.parent = self
 
 # ==========================================
 #              PHASE 1: SCANNER
@@ -104,39 +120,6 @@ class Scanner:
 # ==========================================
 #              PHASE 2: PARSER
 # ==========================================
-
-class Node:
-    def __init__(self, name):
-        self.name = name
-        self.children = []
-        self.parent = None
-
-    def add_child(self, child):
-        if child:
-            self.children.append(child)
-            child.parent = self
-
-    def __str__(self):
-        # Custom RenderTree implementation to match 'anytree' format exactly
-        output = ""
-        # Helper to traverse
-        def render(node, prefix="", is_last=True, is_root=True):
-            res = ""
-            if not is_root:
-                res += prefix + ("└── " if is_last else "├── ")
-            
-            res += str(node.name) + "\n"
-            
-            children_count = len(node.children)
-            for i, child in enumerate(node.children):
-                is_last_child = (i == children_count - 1)
-                new_prefix = prefix
-                if not is_root:
-                    new_prefix += ("    " if is_last else "│   ")
-                res += render(child, new_prefix, is_last_child, is_root=False)
-            return res
-            
-        return render(self, "", True, True)
 
 class Parser:
     def __init__(self, scanner):
@@ -308,18 +291,16 @@ class Parser:
     def parse_program(self):
         node = Node("Program")
         
-        if self.current_token in ['int', 'void', '$']:
-             # FIX: Tell the list parser we are at the top level
-             node.add_child(self.parse_declaration_list(top_level=True))
-        else:
-             node.add_child(self.parse_declaration_list(top_level=True))
+        # Test 4 Fix: top_level=True
+        child = self.parse_declaration_list(top_level=True)
+        if child: child.parent = node
         
-        node.add_child(self.match('$')) # Consumes EOF
-        self.root = node
+        if self.current_token == '$':
+             Node("$", parent=node)
         
-        # Write Output
         with open('parse_tree.txt', 'w', encoding='utf-8') as f:
-            f.write(str(node))
+            for pre, fill, n in RenderTree(node):
+                f.write("%s%s\n" % (pre, n.name))
             
         with open('syntax_errors.txt', 'w', encoding='utf-8') as f:
             if not self.syntax_errors:
@@ -329,36 +310,33 @@ class Parser:
                     f.write(err + "\n")
         return node
 
-    # FIX: Add top_level argument defaulting to False
     def parse_declaration_list(self, top_level=False):
         node = Node("Declaration-list")
         
         if self.current_token in self.FIRST['Declaration']: 
             node.add_child(self.parse_declaration())
-            # Recursively pass the top_level flag
             node.add_child(self.parse_declaration_list(top_level))
             
         elif self.current_token in self.FOLLOW['Declaration-list']:
-            # CRITICAL FIX FOR TEST 4:
-            # If we are at the Program level, '}' is NOT a valid follower.
-            # It should be treated as an error (Illegal }), not epsilon.
+            # Test 4 Fix: If at top level, '}' is NOT valid end
             if top_level and self.current_token == '}':
                 self.report_error(f"illegal {self.current_token}")
-                self.advance() # Panic mode: skip the illegal '}'
-                
-                # After skipping, try to resume
+                self.advance()
                 if self.current_token in self.FIRST['Declaration']:
                     node.add_child(self.parse_declaration())
                     node.add_child(self.parse_declaration_list(top_level))
                 else:
-                    # If next token is '$' or others, we accept epsilon now
                     node.add_child(Node("epsilon"))
             else:
                 node.add_child(Node("epsilon"))
         else:
             if not self.check_error('Declaration-list'):
-                 node.add_child(self.parse_declaration())
-                 node.add_child(self.parse_declaration_list(top_level))
+                 # Recovery successful -> check FIRST again
+                 if self.current_token in self.FIRST['Declaration']:
+                     node.add_child(self.parse_declaration())
+                     node.add_child(self.parse_declaration_list(top_level))
+                 else:
+                     node.add_child(Node("epsilon"))
             else:
                  node.add_child(Node("epsilon"))
         return node
@@ -440,9 +418,12 @@ class Parser:
             node.add_child(Node("epsilon"))
         else:
             if not self.check_error('Param-list'):
-                node.add_child(self.match(','))
-                node.add_child(self.parse_param())
-                node.add_child(self.parse_param_list())
+                if self.current_token == ',':
+                    node.add_child(self.match(','))
+                    node.add_child(self.parse_param())
+                    node.add_child(self.parse_param_list())
+                else:
+                    node.add_child(Node("epsilon"))
             else:
                 node.add_child(Node("epsilon"))
         return node
@@ -463,8 +444,11 @@ class Parser:
              node.add_child(Node("epsilon"))
         else:
             if not self.check_error('Param-prime'):
-                node.add_child(self.match('['))
-                node.add_child(self.match(']'))
+                if self.current_token == '[':
+                    node.add_child(self.match('['))
+                    node.add_child(self.match(']'))
+                else:
+                    node.add_child(Node("epsilon"))
             else:
                 node.add_child(Node("epsilon"))
         return node
@@ -487,8 +471,11 @@ class Parser:
             node.add_child(Node("epsilon"))
         else:
             if not self.check_error('Statement-list'):
-                node.add_child(self.parse_statement())
-                node.add_child(self.parse_statement_list())
+                if self.current_token in self.FIRST['Statement']:
+                    node.add_child(self.parse_statement())
+                    node.add_child(self.parse_statement_list())
+                else:
+                    node.add_child(Node("epsilon"))
             else:
                 node.add_child(Node("epsilon"))
         return node
@@ -543,8 +530,11 @@ class Parser:
             node.add_child(Node("epsilon"))
         else:
             if not self.check_error('Else-stmt'):
-                node.add_child(self.match('else'))
-                node.add_child(self.parse_statement())
+                if self.current_token == 'else':
+                    node.add_child(self.match('else'))
+                    node.add_child(self.parse_statement())
+                else:
+                    node.add_child(Node("epsilon"))
             else:
                 node.add_child(Node("epsilon"))
         return node
@@ -602,7 +592,10 @@ class Parser:
             node.add_child(self.parse_expression())
             node.add_child(self.match(']'))
             node.add_child(self.parse_h())
+        elif self.current_token in self.FIRST['Simple-expression-prime'] or self.current_token in self.FOLLOW['B']:
+            node.add_child(self.parse_simple_expression_prime())
         else:
+            # Fallback for B if nothing matches (it is nullable)
             node.add_child(self.parse_simple_expression_prime())
         return node
 
@@ -647,8 +640,11 @@ class Parser:
             node.add_child(Node("epsilon"))
         else:
             if not self.check_error('C'):
-                node.add_child(self.parse_relop())
-                node.add_child(self.parse_additive_expression())
+                if self.current_token in self.FIRST['Relop']:
+                    node.add_child(self.parse_relop())
+                    node.add_child(self.parse_additive_expression())
+                else:
+                    node.add_child(Node("epsilon"))
             else:
                 node.add_child(Node("epsilon"))
         return node
@@ -692,9 +688,12 @@ class Parser:
             node.add_child(Node("epsilon"))
         else:
             if not self.check_error('D'):
-                node.add_child(self.parse_addop())
-                node.add_child(self.parse_term())
-                node.add_child(self.parse_d())
+                if self.current_token in self.FIRST['Addop']:
+                    node.add_child(self.parse_addop())
+                    node.add_child(self.parse_term())
+                    node.add_child(self.parse_d())
+                else:
+                    node.add_child(Node("epsilon"))
             else:
                 node.add_child(Node("epsilon"))
         return node
@@ -817,9 +816,12 @@ class Parser:
             node.add_child(Node("epsilon"))
         else:
             if not self.check_error('Var-prime'):
-                node.add_child(self.match('['))
-                node.add_child(self.parse_expression())
-                node.add_child(self.match(']'))
+                if self.current_token == '[':
+                    node.add_child(self.match('['))
+                    node.add_child(self.parse_expression())
+                    node.add_child(self.match(']'))
+                else:
+                    node.add_child(Node("epsilon"))
             else:
                 node.add_child(Node("epsilon"))
         return node
@@ -834,9 +836,12 @@ class Parser:
             node.add_child(Node("epsilon"))
         else:
              if not self.check_error('Factor-prime'):
-                 node.add_child(self.match('('))
-                 node.add_child(self.parse_args())
-                 node.add_child(self.match(')'))
+                 if self.current_token == '(':
+                     node.add_child(self.match('('))
+                     node.add_child(self.parse_args())
+                     node.add_child(self.match(')'))
+                 else:
+                     node.add_child(Node("epsilon"))
              else:
                  node.add_child(Node("epsilon"))
         return node
@@ -860,7 +865,10 @@ class Parser:
             node.add_child(Node("epsilon"))
         else:
              if not self.check_error('Args'):
-                  node.add_child(self.parse_arg_list())
+                  if self.current_token in self.FIRST['Arg-list']:
+                      node.add_child(self.parse_arg_list())
+                  else:
+                      node.add_child(Node("epsilon"))
              else:
                   node.add_child(Node("epsilon"))
         return node
@@ -882,13 +890,15 @@ class Parser:
             node.add_child(Node("epsilon"))
         else:
             if not self.check_error('Arg-list-prime'):
-                 node.add_child(self.match(','))
-                 node.add_child(self.parse_expression())
-                 node.add_child(self.parse_arg_list_prime())
+                 if self.current_token == ',':
+                     node.add_child(self.match(','))
+                     node.add_child(self.parse_expression())
+                     node.add_child(self.parse_arg_list_prime())
+                 else:
+                     node.add_child(Node("epsilon"))
             else:
                  node.add_child(Node("epsilon"))
         return node
-
 
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
