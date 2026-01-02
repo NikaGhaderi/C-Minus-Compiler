@@ -307,10 +307,12 @@ class Parser:
 
     def parse_program(self):
         node = Node("Program")
+        
         if self.current_token in ['int', 'void', '$']:
-             node.add_child(self.parse_declaration_list())
+             # FIX: Tell the list parser we are at the top level
+             node.add_child(self.parse_declaration_list(top_level=True))
         else:
-             node.add_child(self.parse_declaration_list())
+             node.add_child(self.parse_declaration_list(top_level=True))
         
         node.add_child(self.match('$')) # Consumes EOF
         self.root = node
@@ -327,17 +329,36 @@ class Parser:
                     f.write(err + "\n")
         return node
 
-    def parse_declaration_list(self):
+    # FIX: Add top_level argument defaulting to False
+    def parse_declaration_list(self, top_level=False):
         node = Node("Declaration-list")
+        
         if self.current_token in self.FIRST['Declaration']: 
             node.add_child(self.parse_declaration())
-            node.add_child(self.parse_declaration_list())
+            # Recursively pass the top_level flag
+            node.add_child(self.parse_declaration_list(top_level))
+            
         elif self.current_token in self.FOLLOW['Declaration-list']:
-            node.add_child(Node("epsilon"))
+            # CRITICAL FIX FOR TEST 4:
+            # If we are at the Program level, '}' is NOT a valid follower.
+            # It should be treated as an error (Illegal }), not epsilon.
+            if top_level and self.current_token == '}':
+                self.report_error(f"illegal {self.current_token}")
+                self.advance() # Panic mode: skip the illegal '}'
+                
+                # After skipping, try to resume
+                if self.current_token in self.FIRST['Declaration']:
+                    node.add_child(self.parse_declaration())
+                    node.add_child(self.parse_declaration_list(top_level))
+                else:
+                    # If next token is '$' or others, we accept epsilon now
+                    node.add_child(Node("epsilon"))
+            else:
+                node.add_child(Node("epsilon"))
         else:
             if not self.check_error('Declaration-list'):
                  node.add_child(self.parse_declaration())
-                 node.add_child(self.parse_declaration_list())
+                 node.add_child(self.parse_declaration_list(top_level))
             else:
                  node.add_child(Node("epsilon"))
         return node
