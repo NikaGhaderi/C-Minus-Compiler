@@ -7,7 +7,7 @@ from anytree import Node as AnyNode, RenderTree
 sys.setrecursionlimit(3000)
 
 # ==========================================
-#        CUSTOM NODE CLASS (The Fix)
+#        CUSTOM NODE CLASS
 # ==========================================
 class Node(AnyNode):
     """
@@ -137,19 +137,6 @@ class Parser:
         elif token_value == '$':
             self.current_token = '$'
 
-    def match(self, expected_token):
-        if self.current_token == expected_token:
-            if self.token_tuple[1] == '$':
-                return Node("$")
-            else:
-                return Node(f"({self.token_tuple[0]}, {self.token_tuple[1]})")
-            self.advance()
-            return None # Return None when match is successful (node created manually if needed)
-        else:
-            self.report_error(f"missing {expected_token}")
-            return None 
-
-    # Override match to return the node created
     def match(self, expected_token):
         if self.current_token == expected_token:
             if self.token_tuple[1] == '$':
@@ -286,14 +273,13 @@ class Parser:
         self.report_error(f"illegal {self.current_token}")
         self.advance()
         
-        # We skipped one token. Caller must try again or handle consequences.
+        # We skipped one token. Caller must try again.
         return False
 
     # --- GRAMMAR FUNCTIONS ---
 
     def parse_program(self):
         node = Node("Program")
-        # Test 4 Fix: top_level=True
         child = self.parse_declaration_list(top_level=True)
         if child: child.parent = node
         
@@ -318,47 +304,44 @@ class Parser:
             node.add_child(self.parse_declaration())
             node.add_child(self.parse_declaration_list(top_level))
         elif self.current_token in self.FOLLOW['Declaration-list']:
-            # Test 4 Fix: If at top level, '}' is NOT valid end
             if top_level and self.current_token == '}':
                 self.report_error(f"illegal {self.current_token}")
                 self.advance()
-                # Recursion Guard
                 if self.current_token in self.FIRST['Declaration']:
                     node.add_child(self.parse_declaration())
                     node.add_child(self.parse_declaration_list(top_level))
                 else:
-                    node.add_child(Node("epsilon"))
+                    return self.parse_declaration_list(top_level)
             else:
                 node.add_child(Node("epsilon"))
         else:
             if not self.check_error('Declaration-list'):
-                 # Recursion Guard
                  if self.current_token in self.FIRST['Declaration']:
                      node.add_child(self.parse_declaration())
                      node.add_child(self.parse_declaration_list(top_level))
                  else:
-                     node.add_child(Node("epsilon"))
+                     return self.parse_declaration_list(top_level)
             else:
                  node.add_child(Node("epsilon"))
         return node
 
     def parse_declaration(self):
+        if self.check_error('Declaration'): return None
         node = Node("Declaration")
-        if self.check_error('Declaration'): return node
         node.add_child(self.parse_declaration_initial())
         node.add_child(self.parse_declaration_prime())
         return node
 
     def parse_declaration_initial(self):
+        if self.check_error('Declaration-initial'): return None
         node = Node("Declaration-initial")
-        if self.check_error('Declaration-initial'): return node
         node.add_child(self.parse_type_specifier())
         node.add_child(self.match('ID'))
         return node
 
     def parse_declaration_prime(self):
+        if self.check_error('Declaration-prime'): return None
         node = Node("Declaration-prime")
-        if self.check_error('Declaration-prime'): return node
         if self.current_token in self.FIRST['Fun-declaration-prime']: 
             node.add_child(self.parse_fun_declaration_prime())
         elif self.current_token in self.FIRST['Var-declaration-prime']:
@@ -368,8 +351,8 @@ class Parser:
         return node
 
     def parse_var_declaration_prime(self):
+        if self.check_error('Var-declaration-prime'): return None
         node = Node("Var-declaration-prime")
-        if self.check_error('Var-declaration-prime'): return node
         if self.current_token == '[':
             node.add_child(self.match('['))
             node.add_child(self.match('NUM'))
@@ -380,8 +363,8 @@ class Parser:
         return node
 
     def parse_fun_declaration_prime(self):
+        if self.check_error('Fun-declaration-prime'): return None
         node = Node("Fun-declaration-prime")
-        if self.check_error('Fun-declaration-prime'): return node
         node.add_child(self.match('('))
         node.add_child(self.parse_params())
         node.add_child(self.match(')'))
@@ -389,8 +372,8 @@ class Parser:
         return node
 
     def parse_type_specifier(self):
+        if self.check_error('Type-specifier'): return None
         node = Node("Type-specifier")
-        if self.check_error('Type-specifier'): return node
         if self.current_token == 'int':
             node.add_child(self.match('int'))
         elif self.current_token == 'void':
@@ -398,8 +381,8 @@ class Parser:
         return node
 
     def parse_params(self):
+        if self.check_error('Params'): return None
         node = Node("Params")
-        if self.check_error('Params'): return node
         if self.current_token == 'int':
             node.add_child(self.match('int'))
             node.add_child(self.match('ID'))
@@ -424,14 +407,14 @@ class Parser:
                     node.add_child(self.parse_param())
                     node.add_child(self.parse_param_list())
                 else:
-                    node.add_child(Node("epsilon"))
+                    return self.parse_param_list()
             else:
                 node.add_child(Node("epsilon"))
         return node
 
     def parse_param(self):
+        if self.check_error('Param'): return None
         node = Node("Param")
-        if self.check_error('Param'): return node
         node.add_child(self.parse_declaration_initial())
         node.add_child(self.parse_param_prime())
         return node
@@ -455,8 +438,8 @@ class Parser:
         return node
 
     def parse_compound_stmt(self):
+        if self.check_error('Compound-stmt'): return None
         node = Node("Compound-stmt")
-        if self.check_error('Compound-stmt'): return node
         node.add_child(self.match('{'))
         node.add_child(self.parse_declaration_list())
         node.add_child(self.parse_statement_list())
@@ -476,14 +459,14 @@ class Parser:
                     node.add_child(self.parse_statement())
                     node.add_child(self.parse_statement_list())
                 else:
-                    node.add_child(Node("epsilon"))
+                    return self.parse_statement_list()
             else:
                 node.add_child(Node("epsilon"))
         return node
 
     def parse_statement(self):
+        if self.check_error('Statement'): return None
         node = Node("Statement")
-        if self.check_error('Statement'): return node
         if self.current_token in self.FIRST['Expression-stmt']:
             node.add_child(self.parse_expression_stmt())
         elif self.current_token in self.FIRST['Compound-stmt']:
@@ -499,8 +482,8 @@ class Parser:
         return node
 
     def parse_expression_stmt(self):
+        if self.check_error('Expression-stmt'): return None
         node = Node("Expression-stmt")
-        if self.check_error('Expression-stmt'): return node
         if self.current_token == 'break':
             node.add_child(self.match('break'))
             node.add_child(self.match(';'))
@@ -512,8 +495,8 @@ class Parser:
         return node
 
     def parse_selection_stmt(self):
+        if self.check_error('Selection-stmt'): return None
         node = Node("Selection-stmt")
-        if self.check_error('Selection-stmt'): return node
         node.add_child(self.match('if'))
         node.add_child(self.match('('))
         node.add_child(self.parse_expression())
@@ -541,8 +524,8 @@ class Parser:
         return node
 
     def parse_iteration_stmt(self):
+        if self.check_error('Iteration-stmt'): return None
         node = Node("Iteration-stmt")
-        if self.check_error('Iteration-stmt'): return node
         node.add_child(self.match('for'))
         node.add_child(self.match('('))
         node.add_child(self.parse_expression())
@@ -555,25 +538,35 @@ class Parser:
         return node
 
     def parse_return_stmt(self):
+        if self.check_error('Return-stmt'): return None
         node = Node("Return-stmt")
-        if self.check_error('Return-stmt'): return node
         node.add_child(self.match('return'))
         node.add_child(self.parse_return_stmt_prime())
         return node
 
     def parse_return_stmt_prime(self):
         node = Node("Return-stmt-prime")
-        if self.check_error('Return-stmt-prime'): return node
         if self.current_token == ';':
             node.add_child(self.match(';'))
-        else:
+        elif self.current_token in self.FIRST['Expression']:
             node.add_child(self.parse_expression())
             node.add_child(self.match(';'))
+        else:
+             if not self.check_error('Return-stmt-prime'):
+                 if self.current_token in self.FIRST['Expression']:
+                     node.add_child(self.parse_expression())
+                     node.add_child(self.match(';'))
+                 else:
+                     node.add_child(self.match(';'))
+             else:
+                 # Should technically be unreachable or handled as epsilon if nullable, 
+                 # but this non-terminal isn't strictly nullable (epsilon) in the grammar
+                 pass
         return node
 
     def parse_expression(self):
+        if self.check_error('Expression'): return None
         node = Node("Expression")
-        if self.check_error('Expression'): return node
         if self.current_token == 'ID':
             node.add_child(self.match('ID'))
             node.add_child(self.parse_b())
@@ -596,7 +589,6 @@ class Parser:
         elif self.current_token in self.FIRST['Simple-expression-prime'] or self.current_token in self.FOLLOW['B']:
             node.add_child(self.parse_simple_expression_prime())
         else:
-            # Fallback for B if nothing matches (it is nullable)
             node.add_child(self.parse_simple_expression_prime())
         return node
 
@@ -612,8 +604,8 @@ class Parser:
         return node
 
     def parse_simple_expression_zegond(self):
+        if self.check_error('Simple-expression-zegond'): return None
         node = Node("Simple-expression-zegond")
-        if self.check_error('Simple-expression-zegond'): return node
         node.add_child(self.parse_additive_expression_zegond())
         node.add_child(self.parse_c())
         return node
@@ -651,8 +643,8 @@ class Parser:
         return node
 
     def parse_relop(self):
+        if self.check_error('Relop'): return None
         node = Node("Relop")
-        if self.check_error('Relop'): return node
         if self.current_token == '==':
             node.add_child(self.match('=='))
         elif self.current_token == '<':
@@ -660,9 +652,7 @@ class Parser:
         return node
 
     def parse_additive_expression(self):
-        if self.check_error('Additive-expression'): 
-            return None
-            
+        if self.check_error('Additive-expression'): return None
         node = Node("Additive-expression")
         node.add_child(self.parse_term())
         node.add_child(self.parse_d())
@@ -675,8 +665,8 @@ class Parser:
         return node
 
     def parse_additive_expression_zegond(self):
+        if self.check_error('Additive-expression-zegond'): return None
         node = Node("Additive-expression-zegond")
-        if self.check_error('Additive-expression-zegond'): return node
         node.add_child(self.parse_term_zegond())
         node.add_child(self.parse_d())
         return node
@@ -702,8 +692,8 @@ class Parser:
         return node
 
     def parse_addop(self):
+        if self.check_error('Addop'): return None
         node = Node("Addop")
-        if self.check_error('Addop'): return node
         if self.current_token == '+':
             node.add_child(self.match('+'))
         elif self.current_token == '-':
@@ -711,8 +701,8 @@ class Parser:
         return node
 
     def parse_term(self):
+        if self.check_error('Term'): return None
         node = Node("Term")
-        if self.check_error('Term'): return node
         node.add_child(self.parse_signed_factor())
         node.add_child(self.parse_g())
         return node
@@ -724,8 +714,8 @@ class Parser:
         return node
 
     def parse_term_zegond(self):
+        if self.check_error('Term-zegond'): return None
         node = Node("Term-zegond")
-        if self.check_error('Term-zegond'): return node
         node.add_child(self.parse_signed_factor_zegond())
         node.add_child(self.parse_g())
         return node
@@ -758,8 +748,8 @@ class Parser:
         return node
 
     def parse_signed_factor(self):
+        if self.check_error('Signed-factor'): return None
         node = Node("Signed-factor")
-        if self.check_error('Signed-factor'): return node
         if self.current_token == '+':
             node.add_child(self.match('+'))
             node.add_child(self.parse_factor())
@@ -771,8 +761,8 @@ class Parser:
         return node
 
     def parse_signed_factor_zegond(self):
+        if self.check_error('Signed-factor-zegond'): return None
         node = Node("Signed-factor-zegond")
-        if self.check_error('Signed-factor-zegond'): return node
         if self.current_token == '+':
             node.add_child(self.match('+'))
             node.add_child(self.parse_factor())
@@ -784,8 +774,8 @@ class Parser:
         return node
 
     def parse_factor(self):
+        if self.check_error('Factor'): return None
         node = Node("Factor")
-        if self.check_error('Factor'): return node
         if self.current_token == '(':
             node.add_child(self.match('('))
             node.add_child(self.parse_expression())
@@ -850,8 +840,8 @@ class Parser:
         return node
 
     def parse_factor_zegond(self):
+        if self.check_error('Factor-zegond'): return None
         node = Node("Factor-zegond")
-        if self.check_error('Factor-zegond'): return node
         if self.current_token == '(':
             node.add_child(self.match('('))
             node.add_child(self.parse_expression())
@@ -877,8 +867,8 @@ class Parser:
         return node
 
     def parse_arg_list(self):
+        if self.check_error('Arg-list'): return None
         node = Node("Arg-list")
-        if self.check_error('Arg-list'): return node
         node.add_child(self.parse_expression())
         node.add_child(self.parse_arg_list_prime())
         return node
