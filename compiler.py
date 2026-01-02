@@ -1,8 +1,9 @@
 # Donya Jafari 401101524 - Nika Ghaderi 401106328
-import os, sys
+import os
+import sys
 from anytree import Node as AnyNode, RenderTree
 
-# Increase recursion depth
+# Increase recursion depth just in case
 sys.setrecursionlimit(3000)
 
 # ==========================================
@@ -45,11 +46,9 @@ class Scanner:
     def get_next_token(self):
         self.skip_whitespace()
         
-        # Return $ at EOF
         if self.pos >= len(self.code):
             return ('SYMBOL', '$')
         
-        # Check for stray comment close */
         if self.pos < len(self.code) - 1 and self.code[self.pos:self.pos+2] == '*/':
             self.errors.append({
                 'line': self.line_number, 'error_str': '*/', 'message': 'Stray closing comment'
@@ -57,7 +56,6 @@ class Scanner:
             self.pos += 2
             return self.get_next_token()
         
-        # Comments and Symbols
         if self.pos < len(self.code):
             if self.pos < len(self.code) - 1:
                 two_char = self.code[self.pos:self.pos+2]
@@ -91,16 +89,13 @@ class Scanner:
                 self.pos += 1
                 return ('SYMBOL', ch)
         
-        # Numbers
         if self.code[self.pos].isdigit():
             num_str = ''
             while self.pos < len(self.code) and self.code[self.pos].isdigit():
                 num_str += self.code[self.pos]
                 self.pos += 1
-            # Check for invalid number formats (leading zeros etc) - simplified for brevity
             return ('NUM', num_str)
 
-        # IDs / Keywords
         if self.code[self.pos].isalpha() or self.code[self.pos] == '_':
             id_str = ''
             while self.pos < len(self.code) and (self.code[self.pos].isalnum() or self.code[self.pos] == '_'):
@@ -110,7 +105,6 @@ class Scanner:
                 return ('KEYWORD', id_str)
             return ('ID', id_str)
 
-        # Illegal char
         self.errors.append({
             'line': self.line_number, 'error_str': self.code[self.pos], 'message': 'Illegal character'
         })
@@ -145,7 +139,19 @@ class Parser:
 
     def match(self, expected_token):
         if self.current_token == expected_token:
-            # Format leaf nodes as (TYPE, VALUE)
+            if self.token_tuple[1] == '$':
+                return Node("$")
+            else:
+                return Node(f"({self.token_tuple[0]}, {self.token_tuple[1]})")
+            self.advance()
+            return None # Return None when match is successful (node created manually if needed)
+        else:
+            self.report_error(f"missing {expected_token}")
+            return None 
+
+    # Override match to return the node created
+    def match(self, expected_token):
+        if self.current_token == expected_token:
             if self.token_tuple[1] == '$':
                 node = Node("$")
             else:
@@ -264,31 +270,29 @@ class Parser:
         first_set = self.FIRST[non_terminal]
         follow_set = follow_override if follow_override is not None else self.FOLLOW[non_terminal]
         
-        # 1. Check FIRST (Success)
+        # 1. Success cases
         if self.current_token in first_set:
             return False
         if 'EPSILON' in first_set:
             if self.current_token in follow_set:
                 return False
         
-        # 2. Check FOLLOW (Missing Non-Terminal)
+        # 2. Check FOLLOW (Missing Non-Terminal) - PRIORITIZE THIS
         if self.current_token in follow_set:
             self.report_error(f"missing {non_terminal}")
-            return True # Caller should handle as epsilon
+            return True # Caller should handle as epsilon/missing
         
         # 3. Illegal Token (Panic: Skip ONE token)
         self.report_error(f"illegal {self.current_token}")
         self.advance()
         
-        # After skipping, we return False to let the caller try to match the NEW token 
-        # (or fail again and produce another error, matching the expected output)
+        # We skipped one token. Caller must try again or handle consequences.
         return False
 
     # --- GRAMMAR FUNCTIONS ---
 
     def parse_program(self):
         node = Node("Program")
-        
         # Test 4 Fix: top_level=True
         child = self.parse_declaration_list(top_level=True)
         if child: child.parent = node
@@ -310,16 +314,15 @@ class Parser:
 
     def parse_declaration_list(self, top_level=False):
         node = Node("Declaration-list")
-        
         if self.current_token in self.FIRST['Declaration']: 
             node.add_child(self.parse_declaration())
             node.add_child(self.parse_declaration_list(top_level))
-            
         elif self.current_token in self.FOLLOW['Declaration-list']:
             # Test 4 Fix: If at top level, '}' is NOT valid end
             if top_level and self.current_token == '}':
                 self.report_error(f"illegal {self.current_token}")
                 self.advance()
+                # Recursion Guard
                 if self.current_token in self.FIRST['Declaration']:
                     node.add_child(self.parse_declaration())
                     node.add_child(self.parse_declaration_list(top_level))
@@ -329,7 +332,7 @@ class Parser:
                 node.add_child(Node("epsilon"))
         else:
             if not self.check_error('Declaration-list'):
-                 # Check FIRST again after recovery
+                 # Recursion Guard
                  if self.current_token in self.FIRST['Declaration']:
                      node.add_child(self.parse_declaration())
                      node.add_child(self.parse_declaration_list(top_level))
@@ -657,8 +660,10 @@ class Parser:
         return node
 
     def parse_additive_expression(self):
+        if self.check_error('Additive-expression'): 
+            return None
+            
         node = Node("Additive-expression")
-        if self.check_error('Additive-expression'): return node
         node.add_child(self.parse_term())
         node.add_child(self.parse_d())
         return node
@@ -916,7 +921,7 @@ def main():
     scanner = Scanner(code)
     parser = Parser(scanner)
     parser.parse_program()
-    print("Compilation completed.")
+    # print("Compilation completed.")
 
 if __name__ == '__main__':
     main()
