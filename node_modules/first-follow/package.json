@@ -1,0 +1,54 @@
+{
+  "name": "first-follow",
+  "version": "4.0.6",
+  "description": "A small (390 bytes) tool for calculating first, follow and predict sets for the grammar",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest",
+    "lint": "eslint ./",
+    "size": "size-limit",
+    "spellcheck": "yaspeller-ci *.md",
+    "clean": "rimraf coverage"
+  },
+  "files": [
+    "index.js"
+  ],
+  "size-limit": [
+    {
+      "limit": "390 B",
+      "path": "index.js"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MikeDevice/first-follow.git"
+  },
+  "keywords": [
+    "first",
+    "follow",
+    "predict",
+    "set",
+    "parser",
+    "grammar"
+  ],
+  "author": "Mikhail Vyrodov",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/MikeDevice/first-follow/issues"
+  },
+  "homepage": "https://github.com/MikeDevice/first-follow#readme",
+  "devDependencies": {
+    "@size-limit/preset-small-lib": "^4.9.1",
+    "coveralls": "^3.1.0",
+    "eslint": "^7.16.0",
+    "eslint-config-airbnb-base": "^14.2.1",
+    "eslint-plugin-import": "^2.22.1",
+    "husky": "^4.3.6",
+    "jest": "^26.6.3",
+    "lint-staged": "^10.5.3",
+    "nrun": "^1.0.0",
+    "rimraf": "3.0.2",
+    "size-limit": "^4.9.1",
+    "yaspeller-ci": "^1.0.2"
+  }
+}
