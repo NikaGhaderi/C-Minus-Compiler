@@ -123,6 +123,7 @@ class Parser:
         self.token_tuple = None     
         self.syntax_errors = []
         self.root = None
+        self.eof_reached = False
         self.advance()
 
     def advance(self):
@@ -146,7 +147,8 @@ class Parser:
             self.advance()
             return node
         else:
-            self.report_error(f"missing {expected_token}")
+            if not self.eof_reached:
+                self.report_error(f"missing {expected_token}")
             return None
 
     def report_error(self, message):
@@ -203,6 +205,8 @@ class Parser:
         'Arg-list-prime': [',', 'EPSILON']
     }
 
+    # FIX: Added '}' to Expression-related FOLLOW sets to allow epsilon transitions
+    # when a semicolon is missing at the end of a block.
     FOLLOW = {
         'Program': ['$'],
         'Declaration-list': ['$', '{', 'break', ';', 'if', 'for', 'return', 'ID', '+', '-', '(', 'NUM', '}'],
@@ -225,29 +229,29 @@ class Parser:
         'Iteration-stmt': ['{', 'break', ';', 'if', 'for', 'return', 'ID', '+', '-', '(', 'NUM', '}', 'else'],
         'Return-stmt': ['{', 'break', ';', 'if', 'for', 'return', 'ID', '+', '-', '(', 'NUM', '}', 'else'],
         'Return-stmt-prime': ['{', 'break', ';', 'if', 'for', 'return', 'ID', '+', '-', '(', 'NUM', '}', 'else'],
-        'Expression': [';', ')', ']', ','],
-        'B': [';', ')', ']', ','],
-        'H': [';', ')', ']', ','],
-        'Simple-expression-zegond': [';', ')', ']', ','],
-        'Simple-expression-prime': [';', ')', ']', ','],
-        'C': [';', ')', ']', ','],
+        'Expression': [';', ')', ']', ',', '}'],
+        'B': [';', ')', ']', ',', '}'],
+        'H': [';', ')', ']', ',', '}'],
+        'Simple-expression-zegond': [';', ')', ']', ',', '}'],
+        'Simple-expression-prime': [';', ')', ']', ',', '}'],
+        'C': [';', ')', ']', ',', '}'],
         'Relop': ['+', '-', '(', 'ID', 'NUM'],
-        'Additive-expression': [';', ')', ']', ','],
-        'Additive-expression-prime': ['==', '<', ';', ')', ']', ','],
-        'Additive-expression-zegond': ['==', '<', ';', ')', ']', ','],
-        'D': ['==', '<', ';', ')', ']', ','],
+        'Additive-expression': [';', ')', ']', ',', '}'],
+        'Additive-expression-prime': ['==', '<', ';', ')', ']', ',', '}'],
+        'Additive-expression-zegond': ['==', '<', ';', ')', ']', ',', '}'],
+        'D': ['==', '<', ';', ')', ']', ',', '}'],
         'Addop': ['+', '-', '(', 'ID', 'NUM'],
-        'Term': ['+', '-', ';', ')', '==', '<', ']', ','],
-        'Term-prime': ['+', '-', '==', '<', ';', ')', ']', ','],
-        'Term-zegond': ['+', '-', '==', '<', ';', ')', ']', ','],
-        'G': ['+', '-', '==', '<', ';', ')', ']', ','],
-        'Signed-factor': ['*', '/', '+', '-', ';', ')', '==', '<', ']', ','],
-        'Signed-factor-zegond': ['*', '/', '+', '-', '==', '<', ';', ')', ']', ','],
-        'Factor': ['*', '/', '+', '-', ';', ')', '==', '<', ']', ','],
-        'Var-call-prime': ['*', '/', '+', '-', ';', ')', '==', '<', ']', ','],
-        'Var-prime': ['*', '/', '+', '-', ';', ')', '==', '<', ']', ','],
-        'Factor-prime': ['*', '/', '+', '-', '==', '<', ';', ')', ']', ','],
-        'Factor-zegond': ['*', '/', '+', '-', '==', '<', ';', ')', ']', ','],
+        'Term': ['+', '-', ';', ')', ']', ',', '}'],
+        'Term-prime': ['+', '-', '==', '<', ';', ')', ']', ',', '}'],
+        'Term-zegond': ['+', '-', '==', '<', ';', ')', ']', ',', '}'],
+        'G': ['+', '-', '==', '<', ';', ')', ']', ',', '}'],
+        'Signed-factor': ['*', '/', '+', '-', ';', ')', '==', '<', ']', ',', '}'],
+        'Signed-factor-zegond': ['*', '/', '+', '-', '==', '<', ';', ')', ']', ',', '}'],
+        'Factor': ['*', '/', '+', '-', ';', ')', ']', ',', '}'],
+        'Var-call-prime': ['*', '/', '+', '-', ';', ')', '==', '<', ']', ',', '}'],
+        'Var-prime': ['*', '/', '+', '-', ';', ')', '==', '<', ']', ',', '}'],
+        'Factor-prime': ['*', '/', '+', '-', '==', '<', ';', ')', ']', ',', '}'],
+        'Factor-zegond': ['*', '/', '+', '-', '==', '<', ';', ')', ']', ',', '}'],
         'Args': [')'],
         'Arg-list': [')'],
         'Arg-list-prime': [')']
@@ -257,23 +261,23 @@ class Parser:
         first_set = self.FIRST[non_terminal]
         follow_set = follow_override if follow_override is not None else self.FOLLOW[non_terminal]
         
-        # 1. Success cases
+        if self.current_token == '$':
+            self.report_error("Unexpected EOF")
+            self.eof_reached = True
+            return True
+
         if self.current_token in first_set:
             return False
         if 'EPSILON' in first_set:
             if self.current_token in follow_set:
                 return False
         
-        # 2. Check FOLLOW (Missing Non-Terminal) - PRIORITIZE THIS
         if self.current_token in follow_set:
             self.report_error(f"missing {non_terminal}")
-            return True # Caller should handle as epsilon/missing
+            return True 
         
-        # 3. Illegal Token (Panic: Skip ONE token)
         self.report_error(f"illegal {self.current_token}")
         self.advance()
-        
-        # We skipped one token. Caller must try again.
         return False
 
     # --- GRAMMAR FUNCTIONS ---
@@ -385,9 +389,17 @@ class Parser:
         node = Node("Params")
         if self.current_token == 'int':
             node.add_child(self.match('int'))
-            node.add_child(self.match('ID'))
-            node.add_child(self.parse_param_prime())
-            node.add_child(self.parse_param_list())
+            
+            # FIX from previous step: Only add children if ID exists
+            id_node = self.match('ID')
+            if id_node:
+                node.add_child(id_node)
+                node.add_child(self.parse_param_prime())
+                node.add_child(self.parse_param_list())
+            else:
+                self.parse_param_prime()
+                self.parse_param_list()
+                
         elif self.current_token == 'void':
             node.add_child(self.match('void'))
         return node
@@ -559,8 +571,6 @@ class Parser:
                  else:
                      node.add_child(self.match(';'))
              else:
-                 # Should technically be unreachable or handled as epsilon if nullable, 
-                 # but this non-terminal isn't strictly nullable (epsilon) in the grammar
                  pass
         return node
 
